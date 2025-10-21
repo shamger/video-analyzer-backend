@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>视频分析上传工具</title>
+    <!-- 引入 Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 设置默认字体 -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fb;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+
+    <!-- 主容器 -->
+    <div id="app" class="w-full max-w-2xl bg-white shadow-2xl rounded-xl p-8 transition-all duration-300">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">🚀 视频分析工具</h1>
+            <p class="text-gray-500 mt-2">将视频上传到 Flask 后端进行 FFprobe 分析</p>
+        </header>
+
+        <!-- 文件上传区域 -->
+        <div class="space-y-4">
+            <!-- 文件选择输入框 -->
+            <label for="videoFile" class="block text-sm font-medium text-gray-700">选择视频文件 (mp4/mov/webm)</label>
+            <input type="file" id="videoFile" accept="video/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition duration-150 rounded-lg border border-gray-300 p-2">
+            
+            <!-- 上传按钮 -->
+            <button id="uploadButton" 
+                    class="w-full py-3 px-4 bg-indigo-600 text-white font-semibold rounded-xl shadow-lg hover:bg-indigo-700 transition duration-150 focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50 disabled:bg-indigo-300"
+                    disabled>
+                上传并分析
+            </button>
+        </div>
+        
+        <!-- 状态/进度指示器 -->
+        <div id="statusMessage" class="mt-6 text-center text-lg text-gray-600">
+            请选择一个视频文件开始。
+        </div>
+
+        <!-- 加载指示器 -->
+        <div id="loadingIndicator" class="hidden mt-6 flex justify-center">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+        </div>
+
+        <!-- 分析结果展示区域 -->
+        <div class="mt-8 border border-gray-200 rounded-lg shadow-inner bg-gray-50 p-4">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">分析报告</h2>
+            <pre id="analysisResult" class="whitespace-pre-wrap text-sm text-gray-700 max-h-96 overflow-y-auto"></pre>
+        </div>
+    </div>
+
+    <!-- JavaScript 逻辑 -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const fileInput = document.getElementById('videoFile');
+            const uploadButton = document.getElementById('uploadButton');
+            const statusMessage = document.getElementById('statusMessage');
+            const analysisResult = document.getElementById('analysisResult');
+            const loadingIndicator = document.getElementById('loadingIndicator');
+
+            // ❗ 待替换：请将此 URL 替换为您 ngrok 或云服务的 HTTPS 地址
+            const API_ENDPOINT = "https://exhortative-tova-cytologically.ngrok-free.dev/analyze"; 
+
+            // --- 辅助函数 ---
+
+            /**
+             * 格式化 JSON 字符串，使其在 UI 中更易读
+             * @param {string} jsonString - 原始 JSON 字符串
+             * @returns {string} 格式化后的字符串
+             */
+            function formatReport(jsonString) {
+                try {
+                    const data = JSON.parse(jsonString);
+                    // 使用 JSON.stringify 的第三个参数进行美化缩进
+                    return JSON.stringify(data, null, 4); 
+                } catch (e) {
+                    return `JSON 解析错误:\n${jsonString}`;
+                }
+            }
+
+            /**
+             * 显示或隐藏元素
+             */
+            function toggleLoading(isLoading) {
+                loadingIndicator.classList.toggle('hidden', !isLoading);
+                uploadButton.disabled = isLoading || !fileInput.files.length;
+                uploadButton.textContent = isLoading ? '正在上传和分析...' : '上传并分析';
+            }
+
+            /**
+             * 显示自定义消息
+             */
+            function setStatus(message, isError = false) {
+                statusMessage.textContent = message;
+                statusMessage.className = isError 
+                    ? 'mt-6 text-center text-lg font-bold text-red-600' 
+                    : 'mt-6 text-center text-lg text-gray-600';
+            }
+
+            // --- 事件监听器 ---
+
+            // 文件选择监听器
+            fileInput.addEventListener('change', () => {
+                if (fileInput.files.length > 0) {
+                    uploadButton.disabled = false;
+                    setStatus(`已选择文件: ${fileInput.files[0].name}，大小: ${(fileInput.files[0].size / 1024 / 1024).toFixed(2)} MB`);
+                } else {
+                    uploadButton.disabled = true;
+                    setStatus('请选择一个视频文件开始。');
+                }
+                analysisResult.textContent = ''; // 清空旧结果
+            });
+
+            // 上传按钮监听器
+            uploadButton.addEventListener('click', async () => {
+                const file = fileInput.files[0];
+                if (!file) {
+                    setStatus("请先选择文件！", true);
+                    return;
+                }
+                
+                toggleLoading(true);
+                analysisResult.textContent = '正在等待服务器响应...';
+                
+                const formData = new FormData();
+                // 确保字段名称与 Flask 后端接收的名称匹配 (默认为 'file')
+                formData.append('file', file);
+
+                try {
+                    const response = await fetch(API_ENDPOINT, {
+                        method: 'POST',
+                        body: formData,
+                        // Fetch API 会自动设置 Content-Type: multipart/form-data
+                    });
+
+                    // 检查 HTTP 状态码
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(`HTTP 错误 ${response.status}: ${errorText || response.statusText}`);
+                    }
+
+                    // 解析 JSON 响应
+                    const jsonResponse = await response.text();
+                    
+                    setStatus("✅ 分析完成！", false);
+                    analysisResult.textContent = formatReport(jsonResponse);
+
+                } catch (error) {
+                    setStatus(`❌ 上传或分析失败: ${error.message}`, true);
+                    analysisResult.textContent = `详细错误信息:\n${error.message}`;
+                    console.error("上传错误:", error);
+                } finally {
+                    toggleLoading(false);
+                    // 可选：上传完成后禁用按钮直到重新选择文件
+                    uploadButton.disabled = true; 
+                }
+            });
+        });
+    </script>
+</body>
+</html>

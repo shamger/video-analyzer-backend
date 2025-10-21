@@ -97,6 +97,12 @@ def analyze_video(filepath):
 
 # --- 路由 ---
 
+@app.route('/', methods=['GET'])
+def serve_index():
+    """根路由：托管并返回index.html页面"""
+    # Flask会自动返回index.html
+    return send_from_directory('static', 'index.html')
+
 @app.route('/ping', methods=['GET'])
 def ping():
     """健康检查接口，检查 FFprobe 是否可用"""
