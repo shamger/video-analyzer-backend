@@ -1,14 +1,33 @@
 import os
 import subprocess
 import json
-from flask import Flask, request, jsonify
+import logging
+from flask import Flask, request, jsonify, send_from_directory
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 from flask_cors import CORS # 导入 CORS
 
+# --- 配置日志 ---
+def setup_logging():
+    # 移除Flask默认的日志处理程序，防止重复输出
+    for handler in app.logger.handlers:
+        app.logger.removeHandler(handler)
+
+    # 根日志记录器（Flask 使用）
+    logging.basicConfig(
+        level=logging.INFO, # 设置日志级别为 INFO
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        # 将日志输出到控制台（标准输出），Docker 会捕获它
+        handlers=[logging.StreamHandler()] 
+    )
+    # 为应用 logger 设置 INFO 级别
+    app.logger.setLevel(logging.INFO)
+
 load_dotenv()
 
 app = Flask(__name__)
+#调用日志配置函数
+setup_logging()
 # 启用 CORS，允许所有来源访问所有路由
 CORS(app) 
 
@@ -101,11 +120,13 @@ def analyze_video(filepath):
 def serve_index():
     """根路由：托管并返回index.html页面"""
     # Flask会自动返回index.html
+    app.logger.info("Sending index.html to client.")
     return send_from_directory('static', 'index.html')
 
 @app.route('/ping', methods=['GET'])
 def ping():
     """健康检查接口，检查 FFprobe 是否可用"""
+    app.logger.info("Received /ping request.")
     try:
         subprocess.run(['ffprobe', '-version'], check=True, capture_output=True)
         return jsonify({"status": "ok", "message": "FFprobe is installed and Flask is running."}), 200
@@ -117,6 +138,7 @@ def ping():
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
+    app.logger.info("Received /analyze request.")
     # 1. 检查是否有文件上传
     if 'file' not in request.files:
         return jsonify({"status": "error", "message": "No file part in the request"}), 400
